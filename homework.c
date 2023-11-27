@@ -20,6 +20,7 @@
 #include <assert.h>
 
 #include "fs5600.h"
+#include "homework.h"
 
 /* disk access. All access is in terms of 4KB blocks; read and
  * write functions return 0 (success) or -EIO.
@@ -72,6 +73,34 @@ void* lab3_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
     return NULL;
 }
 
+int lab3_getattr(const char *path, struct stat *sb, struct fuse_file_info *fi) 
+{
+    if (path == NULL || path[0] != '/') {
+        return -ENOENT;
+    } 
+
+    int argc_max = 5;
+    char *argv[argc_max];
+    char buf[256];
+    int argc = split_path(path, argc_max, argv, buf, sizeof(buf));
+
+    if (argc == 0) {
+        return -ENOENT;
+    }
+
+    
+
+    struct fs_inode *inode = NULL;
+    // get inode from the path
+
+    if (inode == NULL) {
+        return -ENOENT;
+    }
+
+    inode_2_stat(sb, inode);
+
+    return 0;
+}
 /* for read-only version you need to implement:
  * - lab3_init
  * - lab3_getattr
