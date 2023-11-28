@@ -22,6 +22,8 @@
 #include "fs5600.h"
 #include "homework.h"
 
+struct fs_super* superblock;
+
 /* disk access. All access is in terms of 4KB blocks; read and
  * write functions return 0 (success) or -EIO.
  */
@@ -70,6 +72,13 @@ void inode_2_stat(struct stat *sb, struct fs_inode *in)
 
 void* lab3_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
 {
+    // initializes the superblock as a global variable
+    struct fs_super* sb_temp = (struct fs_super*)malloc(sizeof(struct fs_super));
+    block_read(sb_temp, 1, 1);
+    superblock = sb_temp;
+
+    
+
     return NULL;
 }
 
@@ -88,8 +97,6 @@ int lab3_getattr(const char *path, struct stat *sb, struct fuse_file_info *fi)
         return -ENOENT;
     }
 
-    
-
     struct fs_inode *inode = NULL;
     // get inode from the path
 
@@ -101,6 +108,17 @@ int lab3_getattr(const char *path, struct stat *sb, struct fuse_file_info *fi)
 
     return 0;
 }
+
+typedef int (*fuse_fill_dir_t) (void *ptr, const char *name,
+                                const struct stat *stbuf, off_t off,
+                                enum fuse_fill_dir_flags flags);
+
+
+int lab3_readdir(const char *path, void *ptr, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi, enum fuse_readdir_flags flags)
+{
+
+}
+
 /* for read-only version you need to implement:
  * - lab3_init
  * - lab3_getattr
