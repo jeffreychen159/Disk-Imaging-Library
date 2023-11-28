@@ -72,6 +72,22 @@ void* lab3_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
     return NULL;
 }
 
+// static int lab3_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
+//                          off_t offset, struct fuse_file_info *fi)
+// {
+//     (void)offset;
+//     (void)fi;
+
+//     if (strcmp(path, "/") != 0)
+//         return -ENOENT;
+    
+//     block_read(buf, 1, 1);
+//     filler(buf, ".", NULL, 0, 0);
+//     filler(buf, "..", NULL, 0, 0);
+//     filler(buf, path + 1, NULL, 0, 0); // Skip the leading '/' in hello_path
+
+//     return 0;
+// }
 /* for read-only version you need to implement:
  * - lab3_init
  * - lab3_getattr
