@@ -10,6 +10,8 @@
 
 #define BLOCK_SIZE 1024
 #define FS_MAGIC 0x37363030
+#define N_ENT 32
+#define N_INODE 16
 
 /* Entry in a directory
  */
