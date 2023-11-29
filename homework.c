@@ -156,21 +156,6 @@ int lab3_getattr(const char *path, struct stat *sb, struct fuse_file_info *fi)
 
     return 0;
 }
-    if (argc == 0) {
-        return -ENOENT;
-    }
-
-    struct fs_inode *inode = NULL;
-    // get inode from the path
-
-    if (inode == NULL) {
-        return -ENOENT;
-    }
-
-    inode_2_stat(sb, inode);
-
-    return 0;
-}
 
 typedef int (*fuse_fill_dir_t) (void *ptr, const char *name,
                                 const struct stat *stbuf, off_t off,
