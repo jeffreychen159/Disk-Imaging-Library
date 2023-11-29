@@ -30,6 +30,10 @@ struct fs_super* superblock;
 extern int block_read(void *buf, int blknum, int nblks);
 extern int block_write(void *buf, int blknum, int nblks);
 
+struct fs_super* superblock;
+void* blk_map;
+void* in_map;
+struct fs_inode* in_table;
 /* how many buckets of size M do you need to hold N items? 
  */
 int div_round_up(int n, int m) {
@@ -56,6 +60,30 @@ int split_path(const char *path, int argc_max, char **argv, char *buf, int buf_l
     return i;
 }
 
+/*
+search name in directory with inode 'in', and convert it to the subdir inode number
+*/
+int lookup(const char *name, struct fs_inode *in)
+{
+    if (!S_ISDIR(in->mode))
+    {
+        return -ENOTDIR;
+    }
+
+    struct fs_dirent dirents[N_ENT];
+    if (!block_read(dirents, in->ptrs[0], 1))
+    {
+        return -EIO;
+    }
+    for (int i = 0; i < N_ENT; i++)
+    {
+        if (dirents[i].valid == 1 && strcmp(name, dirents[i].name) == 0)
+        {
+            return dirents[i].inode;
+        }
+    }
+    return -ENOENT;
+}
 /* I'll give you this function for free, to help 
  */
 void inode_2_stat(struct stat *sb, struct fs_inode *in)
@@ -70,29 +98,64 @@ void inode_2_stat(struct stat *sb, struct fs_inode *in)
     sb->st_atime = sb->st_mtime = sb->st_ctime = in->mtime;
 }
 
-void* lab3_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
+void *lab3_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
 {
     // initializes the superblock as a global variable
-    struct fs_super* sb_temp = (struct fs_super*)malloc(sizeof(struct fs_super));
-    block_read(sb_temp, 1, 1);
-    superblock = sb_temp;
+    superblock = (struct fs_super *)malloc(sizeof(struct fs_super));
+    block_read(superblock, 0, 1);
 
-    
+    int blk_map_start = 1;
+    int in_map_start = blk_map_start + superblock->blk_map_len;
+    int in_table_start = in_map_start + superblock->in_map_len;
+    // read bitmaps and inode table
+    blk_map = malloc(BLOCK_SIZE * superblock->blk_map_len);
+    if (block_read(blk_map, blk_map_start, superblock->blk_map_len)==-EIO)
+    {
+        fprintf(stderr, "Block bitmap read error: %s", strerror(errno));
+        exit(EIO);
+    }
+    in_map = malloc(BLOCK_SIZE * superblock->in_map_len);
+    if (block_read(in_map, in_map_start, superblock->in_map_len)==-EIO)
+    {
+        fprintf(stderr, "Inode bitmap read error: %s", strerror(errno));
+        exit(EIO);
+    }
+    in_table = malloc(BLOCK_SIZE * superblock->inodes_len);
+    if (block_read(in_table, in_table_start, superblock->inodes_len)==-EIO)
+    {
+        fprintf(stderr, "Inode table read error: %s", strerror(errno));
+        exit(EIO);
+    }
 
     return NULL;
 }
-
 int lab3_getattr(const char *path, struct stat *sb, struct fuse_file_info *fi) 
 {
     if (path == NULL || path[0] != '/') {
         return -ENOENT;
     } 
 
+
     int argc_max = 5;
     char *argv[argc_max];
     char buf[256];
     int argc = split_path(path, argc_max, argv, buf, sizeof(buf));
 
+    if (argc == 0)
+    {
+        return -ENOENT;
+    }
+
+    struct fs_inode inode = in_table[1]; // the rootdir is with inode1
+    // get inode from the path
+    for (int i = 0; i < argc; i++)
+    {
+        inode = in_table[lookup(argv[i], &inode)];
+    }
+    inode_2_stat(sb, &inode);
+
+    return 0;
+}
     if (argc == 0) {
         return -ENOENT;
     }
@@ -141,7 +204,7 @@ int lab3_readdir(const char *path, void *ptr, fuse_fill_dir_t filler, off_t offs
  */
 struct fuse_operations fs_ops = {
     .init = lab3_init,
-//    .getattr = lab3_getattr,
+    .getattr = lab3_getattr,
 //    .readdir = lab3_readdir,
 //    .read = lab3_read,
 
