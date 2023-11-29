@@ -30,6 +30,7 @@ extern int block_write(void *buf, int blknum, int nblks);
 struct fs_super* superblock;
 void* blk_map;
 void* in_map;
+void* in_table;
 /* how many buckets of size M do you need to hold N items? 
  */
 int div_round_up(int n, int m) {
@@ -70,32 +71,57 @@ void inode_2_stat(struct stat *sb, struct fs_inode *in)
     sb->st_atime = sb->st_mtime = sb->st_ctime = in->mtime;
 }
 
-void* lab3_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
+void *lab3_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
 {
     // initializes the superblock as a global variable
     superblock = (struct fs_super *)malloc(sizeof(struct fs_super));
     block_read(superblock, 0, 1);
 
+    int blk_map_start = 1;
+    int in_map_start = blk_map_start + superblock->blk_map_len;
+    int in_table_start = in_map_start + superblock->in_map_len;
+    // read bitmaps and inode table
     blk_map = malloc(BLOCK_SIZE * superblock->blk_map_len);
-    block_read(blk_map, 1, superblock->blk_map_len);
-
+    block_read(blk_map, blk_map_start, superblock->blk_map_len);
     in_map = malloc(BLOCK_SIZE * superblock->in_map_len);
-    block_read(in_map, 1 + superblock->blk_map_len, superblock->in_map_len);
-    // for (int i = 0; i < BLOCK_SIZE; i++)
-    // {
-    //     if (bit_test(blk_map,i))
-    //     {
-    //         printf("block number: %d\tvalid\n",i);
-    //     }
-    // }
-    // for (int i = 0; i < BLOCK_SIZE; i++)
-    // {
-    //     if (bit_test(in_map,i))
-    //     {
-    //         printf("inode number: %d\tvalid\n",i);
-    //     }
-    // }
+    block_read(in_map, in_map_start, superblock->in_map_len);
+    in_table = malloc(BLOCK_SIZE * superblock->inodes_len);
+    block_read(in_table, in_table_start, superblock->inodes_len);
+
     return NULL;
+}
+
+int lab3_getattr(const char *path, struct stat *sb, struct fuse_file_info *fi) 
+{
+    if (path == NULL || path[0] != '/') {
+        return -ENOENT;
+    } 
+
+    int argc_max = 5;
+    char *argv[argc_max];
+    char buf[256];
+    int argc = split_path(path, argc_max, argv, buf, sizeof(buf));
+
+    if (argc == 0) {
+        return -ENOENT;
+    }
+
+    struct fs_inode *inode = NULL;
+    // get inode from the path
+    for (int i = 0; i < argc; i++)
+    {
+        argv[i];
+    }
+    void *buffer;
+
+    block_read(buffer, );
+    if (inode == NULL) {
+        return -ENOENT;
+    }
+
+    inode_2_stat(sb, inode);
+
+    return 0;
 }
 
 // static int lab3_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
