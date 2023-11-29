@@ -27,6 +27,9 @@
 extern int block_read(void *buf, int blknum, int nblks);
 extern int block_write(void *buf, int blknum, int nblks);
 
+struct fs_super* superblock;
+void* blk_map;
+void* in_map;
 /* how many buckets of size M do you need to hold N items? 
  */
 int div_round_up(int n, int m) {
@@ -69,6 +72,29 @@ void inode_2_stat(struct stat *sb, struct fs_inode *in)
 
 void* lab3_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
 {
+    // initializes the superblock as a global variable
+    superblock = (struct fs_super *)malloc(sizeof(struct fs_super));
+    block_read(superblock, 0, 1);
+
+    blk_map = malloc(BLOCK_SIZE * superblock->blk_map_len);
+    block_read(blk_map, 1, superblock->blk_map_len);
+
+    in_map = malloc(BLOCK_SIZE * superblock->in_map_len);
+    block_read(in_map, 1 + superblock->blk_map_len, superblock->in_map_len);
+    // for (int i = 0; i < BLOCK_SIZE; i++)
+    // {
+    //     if (bit_test(blk_map,i))
+    //     {
+    //         printf("block number: %d\tvalid\n",i);
+    //     }
+    // }
+    // for (int i = 0; i < BLOCK_SIZE; i++)
+    // {
+    //     if (bit_test(in_map,i))
+    //     {
+    //         printf("inode number: %d\tvalid\n",i);
+    //     }
+    // }
     return NULL;
 }
 
