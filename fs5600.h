@@ -12,6 +12,7 @@
 #define FS_MAGIC 0x37363030
 #define N_ENT 32
 #define N_INODE 16
+#define MAX_DEPTH 5
 
 /* Entry in a directory
  */
