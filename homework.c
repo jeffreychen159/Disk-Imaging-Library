@@ -68,7 +68,7 @@ int lookup(const char *name, struct fs_inode *in)
     }
 
     struct fs_dirent dirents[N_ENT];
-    if (!block_read(dirents, in->ptrs[0], 1))
+    if (block_read(dirents, in->ptrs[0], 1) == -EIO)
     {
         return -EIO;
     }
@@ -123,10 +123,16 @@ void *lab3_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
         fprintf(stderr, "Inode table read error: %s", strerror(errno));
         exit(EIO);
     }
-
+    // struct fs_dirent buffer[32];
+    // block_read(buffer,in_table[1].ptrs[0],1);
     return NULL;
 }
 
+/* use stat to test:
+$stat tmp
+$stat tmp/dir
+$stat tmp/file.1
+*/
 int lab3_getattr(const char *path, struct stat *sb, struct fuse_file_info *fi)
 {
     if (path == NULL || path[0] != '/')
@@ -139,10 +145,10 @@ int lab3_getattr(const char *path, struct stat *sb, struct fuse_file_info *fi)
     char buf[256];
     int argc = split_path(path, argc_max, argv, buf, sizeof(buf));
 
-    if (argc == 0)
-    {
-        return -ENOENT;
-    }
+    // if (argc == 0)
+    // {
+    //     return -ENOENT;
+    // }
 
     struct fs_inode inode = in_table[1]; // the rootdir is with inode1
     // get inode from the path
