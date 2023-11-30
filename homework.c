@@ -20,6 +20,9 @@
 #include <assert.h>
 
 #include "fs5600.h"
+#include "homework.h"
+
+struct fs_super* superblock;
 
 /* disk access. All access is in terms of 4KB blocks; read and
  * write functions return 0 (success) or -EIO.
@@ -135,20 +138,15 @@ $stat tmp/file.1
 */
 int lab3_getattr(const char *path, struct stat *sb, struct fuse_file_info *fi)
 {
-    if (path == NULL || path[0] != '/')
-    {
+    if (path == NULL || path[0] != '/') {
         return -ENOENT;
-    }
+    } 
+
 
     int argc_max = 5;
     char *argv[argc_max];
     char buf[256];
     int argc = split_path(path, argc_max, argv, buf, sizeof(buf));
-
-    // if (argc == 0)
-    // {
-    //     return -ENOENT;
-    // }
 
     struct fs_inode inode = in_table[1]; // the rootdir is with inode1
     // get inode from the path
@@ -160,22 +158,13 @@ int lab3_getattr(const char *path, struct stat *sb, struct fuse_file_info *fi)
 
     return 0;
 }
-// static int lab3_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
-//                          off_t offset, struct fuse_file_info *fi)
-// {
-//     (void)offset;
-//     (void)fi;
 
-//     if (strcmp(path, "/") != 0)
-//         return -ENOENT;
-    
-//     block_read(buf, 1, 1);
-//     filler(buf, ".", NULL, 0, 0);
-//     filler(buf, "..", NULL, 0, 0);
-//     filler(buf, path + 1, NULL, 0, 0); // Skip the leading '/' in hello_path
 
-//     return 0;
-// }
+int lab3_readdir(const char *path, void *ptr, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi, enum fuse_readdir_flags flags)
+{
+
+}
+
 /* for read-only version you need to implement:
  * - lab3_init
  * - lab3_getattr
