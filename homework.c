@@ -179,9 +179,6 @@ int lab3_readdir(const char *path, void *ptr, fuse_fill_dir_t filler, off_t offs
         return -ENOTDIR;
     }
 
-    // filler(buf, ".", NULL, 0, 0);
-    // filler(buf, "..", NULL, 0, 0);
-
     struct fs_dirent dirents[N_ENT];
     if (block_read(dirents, inode.ptrs[0], 1) == -EIO)
     {
@@ -195,6 +192,67 @@ int lab3_readdir(const char *path, void *ptr, fuse_fill_dir_t filler, off_t offs
         }
     }
     return 0;
+}
+
+/*
+You can use cat to test this method
+*/
+int lab3_read(const char *path, char *buf, size_t len, off_t offset, struct fuse_file_info *fi) 
+{
+    if (path == NULL || path[0] != '/') {
+        return -ENOENT;
+    }
+
+    char *argv[MAX_DEPTH];
+    char buf_path[256];
+    int argc = split_path(path, MAX_DEPTH, argv, buf_path, sizeof(buf_path));
+
+    struct fs_inode inode = in_table[1]; // root directory is inode 1
+    // Traverse the directory structure to find the inode
+    for (int i = 0; i < argc; i++) {
+        inode = in_table[lookup(argv[i], &inode)];
+    }
+
+    // Checks to see if it is a file
+    if (!S_ISREG(inode.mode)) {
+        return -EISDIR;
+    }
+
+    // Check if the offset is within the file size
+    if (offset >= inode.size) {
+        return 0;
+    }
+
+    // Calculate the remaining bytes to read
+    size_t remaining_bytes = inode.size - offset;
+    size_t bytes_to_read = len < remaining_bytes ? len : remaining_bytes;
+
+    // Calculate the block number and offset within the block
+    int block_num = offset / BLOCK_SIZE;
+    int block_offset = offset % BLOCK_SIZE;
+
+    // Read data from the file block by block
+    while (bytes_to_read > 0) {
+        char block[BLOCK_SIZE];
+        // Checks if there is an error reading the block
+        if (block_read(block, inode.ptrs[block_num], 1) == -EIO) {
+            return -EIO;
+        }
+
+        // Calculate the number of bytes to copy from this block
+        size_t bytes_from_block = bytes_to_read < (BLOCK_SIZE - block_offset) ? bytes_to_read : (BLOCK_SIZE - block_offset);
+
+        // Copy the data from the block to the buffer
+        memcpy(buf, block + block_offset, bytes_from_block);
+
+        // Update pointers and counters
+        buf += bytes_from_block;
+        bytes_to_read -= bytes_from_block;
+        block_offset = 0;
+        block_num++;
+    }
+
+    return len - bytes_to_read;
 }
 
 /* for read-only version you need to implement:
@@ -221,7 +279,7 @@ struct fuse_operations fs_ops = {
     .init = lab3_init,
     .getattr = lab3_getattr,
     .readdir = lab3_readdir,
-//    .read = lab3_read,
+    .read = lab3_read,
 
 //    .create = lab3_create,
 //    .mkdir = lab3_mkdir,
