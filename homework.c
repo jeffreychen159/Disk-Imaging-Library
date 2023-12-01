@@ -157,7 +157,6 @@ int lab3_getattr(const char *path, struct stat *sb, struct fuse_file_info *fi)
     return 0;
 }
 
-
 int lab3_readdir(const char *path, void *ptr, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi, enum fuse_readdir_flags flags)
 {
     if (path == NULL || path[0] != '/') {
