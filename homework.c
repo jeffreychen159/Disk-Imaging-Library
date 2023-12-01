@@ -71,7 +71,7 @@ int lookup(const char *name, struct fs_inode *in)
     }
 
     struct fs_dirent dirents[N_ENT];
-    if (!block_read(dirents, in->ptrs[0], 1))
+    if (block_read(dirents, in->ptrs[0], 1) == -EIO)
     {
         return -EIO;
     }
@@ -126,25 +126,25 @@ void *lab3_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
         fprintf(stderr, "Inode table read error: %s", strerror(errno));
         exit(EIO);
     }
-
+    // struct fs_dirent buffer[32];
+    // block_read(buffer,in_table[1].ptrs[0],1);
     return NULL;
 }
-int lab3_getattr(const char *path, struct stat *sb, struct fuse_file_info *fi) 
+
+/* use stat to test:
+$stat tmp
+$stat tmp/dir
+$stat tmp/file.1
+*/
+int lab3_getattr(const char *path, struct stat *sb, struct fuse_file_info *fi)
 {
     if (path == NULL || path[0] != '/') {
         return -ENOENT;
-    } 
-
-
-    int argc_max = 5;
-    char *argv[argc_max];
-    char buf[256];
-    int argc = split_path(path, argc_max, argv, buf, sizeof(buf));
-
-    if (argc == 0)
-    {
-        return -ENOENT;
     }
+
+    char *argv[MAX_DEPTH];
+    char buf[256];
+    int argc = split_path(path, MAX_DEPTH, argv, buf, sizeof(buf));
 
     struct fs_inode inode = in_table[1]; // the rootdir is with inode1
     // get inode from the path
@@ -157,14 +157,44 @@ int lab3_getattr(const char *path, struct stat *sb, struct fuse_file_info *fi)
     return 0;
 }
 
-typedef int (*fuse_fill_dir_t) (void *ptr, const char *name,
-                                const struct stat *stbuf, off_t off,
-                                enum fuse_fill_dir_flags flags);
-
-
 int lab3_readdir(const char *path, void *ptr, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi, enum fuse_readdir_flags flags)
 {
+    if (path == NULL || path[0] != '/') {
+        return -ENOENT;
+    }
 
+    char *argv[MAX_DEPTH];
+    char buf[256];
+    int argc = split_path(path, MAX_DEPTH, argv, buf, sizeof(buf));
+
+    struct fs_inode inode = in_table[1]; // the rootdir is with inode1
+    // get inode from the path
+    for (int i = 0; i < argc; i++)
+    {
+        inode = in_table[lookup(argv[i], &inode)];
+    }
+    // check if is a directory
+    if (!S_ISDIR(inode.mode))
+    {
+        return -ENOTDIR;
+    }
+
+    // filler(buf, ".", NULL, 0, 0);
+    // filler(buf, "..", NULL, 0, 0);
+
+    struct fs_dirent dirents[N_ENT];
+    if (block_read(dirents, inode.ptrs[0], 1) == -EIO)
+    {
+        return -EIO;
+    }
+    for (int i = 0; i < N_ENT; i++)
+    {// valid entries are not contiguous, go through the whole block
+        if (dirents[i].valid == 1)
+        {
+            filler(ptr, dirents[i].name, NULL, 0, 0);
+        }
+    }
+    return 0;
 }
 
 /* for read-only version you need to implement:
@@ -190,7 +220,7 @@ int lab3_readdir(const char *path, void *ptr, fuse_fill_dir_t filler, off_t offs
 struct fuse_operations fs_ops = {
     .init = lab3_init,
     .getattr = lab3_getattr,
-//    .readdir = lab3_readdir,
+    .readdir = lab3_readdir,
 //    .read = lab3_read,
 
 //    .create = lab3_create,
