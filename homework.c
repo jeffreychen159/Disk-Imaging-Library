@@ -239,15 +239,24 @@ int lab3_readdir(const char *path, void *ptr, fuse_fill_dir_t filler, off_t offs
 /*
 You can use cat to test this method
 */
-int lab3_read(const char *path, char *buf, size_t len, off_t offset, struct fuse_file_info *fi)
+int lab3_read(const char *path, char *buf, size_t len, off_t offset, struct fuse_file_info *fi) 
 {
-    int inum = path_to_inode(path);
-    if (inum < 0)
-        return inum;
-    struct fs_inode inode = in_table[inum];
+    if (path == NULL || path[0] != '/') {
+        return -ENOENT;
+    }
+
+    char *argv[MAX_DEPTH];
+    char buf_path[256];
+    int argc = split_path(path, MAX_DEPTH, argv, buf_path, sizeof(buf_path));
+
+    struct fs_inode inode = in_table[1]; // root directory is inode 1
+    // Traverse the directory structure to find the inode
+    for (int i = 0; i < argc; i++) {
+        inode = in_table[lookup(argv[i], &inode)];
+    }
+
     // Checks to see if it is a file
-    if (!S_ISREG(inode.mode))
-    {
+    if (!S_ISREG(inode.mode)) {
         return -EISDIR;
     }
 
@@ -290,6 +299,7 @@ int lab3_read(const char *path, char *buf, size_t len, off_t offset, struct fuse
 
     return len - bytes_to_read;
 }
+
 
 int lab3_mkdir(const char *path, mode_t mode)
 {
@@ -397,12 +407,12 @@ struct fuse_operations fs_ops = {
     .readdir = lab3_readdir,
     .read = lab3_read,
 
-    //    .create = lab3_create,
+    .create = lab3_create,
     .mkdir = lab3_mkdir,
-    //    .unlink = lab3_unlink,
-    //    .rmdir = lab3_rmdir,
-    //    .rename = lab3_rename,
-    //    .chmod = lab3_chmod,
-    //    .truncate = lab3_truncate,
-    //    .write = lab3_write,
+//    .unlink = lab3_unlink,
+//    .rmdir = lab3_rmdir,
+//    .rename = lab3_rename,
+//    .chmod = lab3_chmod,
+//    .truncate = lab3_truncate,
+//    .write = lab3_write,
 };
