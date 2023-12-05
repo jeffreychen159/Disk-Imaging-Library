@@ -255,6 +255,105 @@ int lab3_read(const char *path, char *buf, size_t len, off_t offset, struct fuse
     return len - bytes_to_read;
 }
 
+int lab3_create(const char *path, mode_t mode, struct fuse_file_info *fi) 
+{
+    if (path == NULL || path[0] != '/') {
+        return -ENOENT;
+    }
+
+    char *argv[MAX_DEPTH];
+    char buf_path[256];
+    int argc = split_path(path, MAX_DEPTH, argv, buf_path, sizeof(buf_path));
+
+    struct fs_inode parent_inode = in_table[1]; // root directory is inode 1
+    // Traverse the directory structure to find the parent inode
+    for (int i = 0; i < argc - 1; i++) {
+        parent_inode = in_table[lookup(argv[i], &parent_inode)];
+    }
+
+    // Check if the parent inode represents a directory
+    if (!S_ISDIR(parent_inode.mode)) {
+        return -ENOTDIR;
+    }
+
+    // Check if the file already exists
+    int existing_inode = lookup(argv[argc - 1], &parent_inode);
+    if (existing_inode != -ENOENT) {
+        return -EEXIST;
+    }
+
+    // Find a free inode in the inode table
+    int inode_num = -1;
+    for (int i = 0; i < superblock->inodes_len; i++) {
+        if (bit_test(in_map, i) == 0)
+        {
+            inode_num = i;
+            break;
+        }
+    }
+
+    // Check if a free inode was found
+    if (inode_num == -1) {
+        return -ENOSPC; // No space left on the device
+    }
+
+    // Set the bit corresponding to the new inode in the inode bitmap
+    bit_set(in_map, inode_num);
+
+    // Initialize the new inode
+    struct fs_inode new_inode;
+    new_inode.mode = S_IFREG | mode;
+    new_inode.uid = getuid();
+    new_inode.gid = getgid();
+    new_inode.size = 0;
+
+    // Find a free block in the block bitmap for the file data
+    int block_num = -1;
+    for (int i = 0; i < superblock->blk_map_len; i++) {
+        if (bit_test(blk_map, i) == 0) 
+        {
+            block_num = i;
+            break;
+        }
+    }
+
+    // Check if a free block was found
+    if (block_num == -1) {
+        return -ENOSPC; // No space left on the device
+    }
+
+    // Set the bit corresponding to the new block in the block bitmap
+    bit_set(blk_map, block_num);
+
+    // Update the new inode with the block pointer
+    new_inode.ptrs[0] = block_num;
+
+    // Write the new inode to the inode table
+    block_write(&new_inode, 1 + inode_num, 1);
+
+    // Update the parent directory entry with the new file information
+    struct fs_dirent dirents[N_ENT];
+    block_read(dirents, parent_inode.ptrs[0], 1);
+
+    // Find a free directory entry
+    int dirent_idx;
+    for (dirent_idx = 0; dirent_idx < N_ENT; dirent_idx++) {
+        if (!dirents[dirent_idx].valid) {
+            break;
+        }
+    }
+
+    // Update the directory entry with the new file information
+    dirents[dirent_idx].valid = 1;
+    strncpy(dirents[dirent_idx].name, argv[argc - 1], sizeof(dirents[dirent_idx].name));
+    dirents[dirent_idx].inode = inode_num;
+
+    // Write the updated directory entries back to the block
+    block_write(dirents, parent_inode.ptrs[0], 1);
+
+    return 0;
+}
+
 /* for read-only version you need to implement:
  * - lab3_init
  * - lab3_getattr
@@ -281,7 +380,7 @@ struct fuse_operations fs_ops = {
     .readdir = lab3_readdir,
     .read = lab3_read,
 
-//    .create = lab3_create,
+   .create = lab3_create,
 //    .mkdir = lab3_mkdir,
 //    .unlink = lab3_unlink,
 //    .rmdir = lab3_rmdir,
