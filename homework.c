@@ -329,30 +329,13 @@ int lab3_read(const char *path, char *buf, size_t len, off_t offset, struct fuse
 
 int lab3_mkdir(const char *path, mode_t mode)
 {
-
+    // parent path
     char name[28];
     int parent_inum = path_to_parent(path, name);
     if (parent_inum < 0)
         return parent_inum;
 
-    if (path == NULL || path[0] != '/')
-    {
-        return -ENOENT;
-    }
-    // char *argv[MAX_DEPTH];
-    // char buf[256];
-    // int argc = split_path(path, MAX_DEPTH, argv, buf, sizeof(buf));
-
-    // int parent_inum = 1; // the rootdir is with inode1
-    // // make sure parent path is valid
-    // int i = 0;
-    // for (i; i < argc - 1; i++)
-    // {
-    //     parent_inum = lookup(argv[i], &in_table[parent_inum]); // inode number of parent
-    //     if (parent_inum < 0)
-    //         return parent_inum;
-    // }
-    // path itself
+    // dir itself
     int inum = lookup(name, &in_table[parent_inum]);
     if (inum > 0) // path already exists
     {
