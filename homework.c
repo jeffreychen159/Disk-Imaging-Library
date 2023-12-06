@@ -23,8 +23,6 @@
 #include "fs5600.h"
 #include "homework.h"
 
-struct fs_super *superblock;
-
 /* disk access. All access is in terms of 4KB blocks; read and
  * write functions return 0 (success) or -EIO.
  */
@@ -74,16 +72,16 @@ int lookup(const char *name, struct fs_inode *in)
         return -ENOTDIR;
     }
 
-    struct fs_dirent dirents[N_ENT];
-    if (block_read(dirents, in->ptrs[0], 1) == -EIO)
+    struct fs_dirent dir[N_ENT];
+    if (block_read(dir, in->ptrs[0], 1) == -EIO)
     {
         return -EIO;
     }
     for (int i = 0; i < N_ENT; i++)
     {
-        if (dirents[i].valid == 1 && strcmp(name, dirents[i].name) == 0)
+        if (dir[i].valid == 1 && strcmp(name, dir[i].name) == 0)
         {
-            return dirents[i].inode; // return matched inode number
+            return dir[i].inode; // return matched inode number
         }
     }
     return -ENOENT;
@@ -112,6 +110,30 @@ int path_to_inode(const char *path)
         if (inum < 0)
             return inum;
     }
+    return inum;
+}
+// do we need a path_to_parent?
+int path_to_parent(const char *path, char* name)
+{
+    if (path == NULL || path[0] != '/')
+    {
+        return -ENOENT;
+    }
+
+    char *argv[MAX_DEPTH];
+    char buf[256];
+    int argc = split_path(path, MAX_DEPTH, argv, buf, sizeof(buf));
+
+    int inum = 1; // the rootdir is with inode1
+    // get inode from the path
+    int i = 0;
+    for (i; i < argc - 1; i++)
+    {
+        inum = lookup(argv[i], &in_table[inum]);
+        if (inum < 0)
+            return inum;
+    }
+    strcpy(name, argv[i]);
     return inum;
 }
 
@@ -163,7 +185,11 @@ void *lab3_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
 {
     // initializes the superblock as a global variable
     superblock = (struct fs_super *)malloc(sizeof(struct fs_super));
-    block_read(superblock, 0, 1);
+    if (block_read(superblock, 0, 1) == -EIO)
+    {
+        fprintf(stderr, "Superblock read error: %s", strerror(errno));
+        exit(EIO);
+    }
 
     int blk_map_start = 1;
     int in_map_start = blk_map_start + superblock->blk_map_len;
@@ -221,16 +247,16 @@ int lab3_readdir(const char *path, void *ptr, fuse_fill_dir_t filler, off_t offs
         return -ENOTDIR;
     }
 
-    struct fs_dirent dirents[N_ENT];
-    if (block_read(dirents, inode.ptrs[0], 1) == -EIO)
+    struct fs_dirent dir[N_ENT];
+    if (block_read(dir, inode.ptrs[0], 1) == -EIO)
     {
         return -EIO;
     }
     for (int i = 0; i < N_ENT; i++)
     { // valid entries are not contiguous, go through the whole block
-        if (dirents[i].valid == 1)
+        if (dir[i].valid == 1)
         {
-            filler(ptr, dirents[i].name, NULL, 0, 0);
+            filler(ptr, dir[i].name, NULL, 0, 0);
         }
     }
     return 0;
@@ -293,31 +319,36 @@ int lab3_read(const char *path, char *buf, size_t len, off_t offset, struct fuse
 
 int lab3_mkdir(const char *path, mode_t mode)
 {
+
+    char name[28];
+    int parent_inum = path_to_parent(path, name);
+    if (parent_inum < 0)
+        return parent_inum;
+
     if (path == NULL || path[0] != '/')
     {
         return -ENOENT;
     }
+    // char *argv[MAX_DEPTH];
+    // char buf[256];
+    // int argc = split_path(path, MAX_DEPTH, argv, buf, sizeof(buf));
 
-    char *argv[MAX_DEPTH];
-    char buf[256];
-    int argc = split_path(path, MAX_DEPTH, argv, buf, sizeof(buf));
-
-    int inum = 1; // the rootdir is with inode1
-    // make sure parent path is valid
-    int i = 0;
-    for (i; i < argc - 1; i++)
-    {
-        inum = lookup(argv[i], &in_table[inum]); // inode number of parent
-        if (inum < 0)
-            return inum;
-    }
+    // int parent_inum = 1; // the rootdir is with inode1
+    // // make sure parent path is valid
+    // int i = 0;
+    // for (i; i < argc - 1; i++)
+    // {
+    //     parent_inum = lookup(argv[i], &in_table[parent_inum]); // inode number of parent
+    //     if (parent_inum < 0)
+    //         return parent_inum;
+    // }
     // path itself
-    int new_inum = lookup(argv[i], &in_table[inum]);
-    if (new_inum > 0) // path already exists
+    int inum = lookup(name, &in_table[parent_inum]);
+    if (inum > 0) // path already exists
     {
         return -EEXIST;
     }
-    else if (new_inum == -ENOENT) // able to create the new directory
+    else if (inum == -ENOENT) // able to create the new directory
     {
         // allocate block, inode
         int blk_num = alloc_block();
@@ -327,50 +358,118 @@ int lab3_mkdir(const char *path, mode_t mode)
         if (in_num < 0)
             return in_num;
 
+        // write directory entry of the new dir in parent data block
+        struct fs_dirent parent_dir[N_ENT];
+        int parent_blknum = in_table[parent_inum].ptrs[0];
+
+        if (block_read(parent_dir, parent_blknum, 1)==-EIO)
+            return -EIO;
+        int c = 0;
+        while (parent_dir[c].valid) // TODO: handle out of space for a new entry
+            c++;
+        struct fs_dirent *parent_dirent = &parent_dir[c];
+        parent_dirent->valid = 1;
+        parent_dirent->inode = in_num;
+        strcpy(parent_dirent->name, name);
+
+        block_write(parent_dir, parent_blknum, 1);
+
         // write inode table
-        struct fs_inode *inode = &in_table[in_num];
-        inode->ptrs[0] = blk_num;
-        inode->size = BLOCK_SIZE;
+        struct fs_inode *inode = &in_table[in_num]; //use a pointer to modify inode table itself
+        memset(inode, 0, sizeof(struct fs_inode));
         inode->mode = mode | S_IFDIR;
+        inode->size = BLOCK_SIZE;
         inode->mtime = time(NULL);
+        inode->ptrs[0] = blk_num;
 
         int in_block_start = 1 + superblock->blk_map_len + superblock->in_map_len;
         int in_block_offset = in_num / N_INODE;
         block_write(in_table + in_block_offset * N_INODE, in_block_start + in_block_offset, 1);
 
-        // write directory entry of the new dir in parent data block
-        struct fs_dirent dirents[N_ENT];
-        int parent_blknum = in_table[inum].ptrs[0];
-        block_read(dirents, parent_blknum, 1);
-        int c = 0;
-        while (dirents[c].valid) // TODO: handle out of space for a new entry
-            c++;
-        struct fs_dirent *dirent = &dirents[c];
-        dirent->valid = 1;
-        dirent->inode = in_num;
-        strcpy(dirent->name, argv[i]);
-
-        block_write(dirents, parent_blknum, 1);
-
         // write to new dir data block(an empty file)
-        struct fs_dirent new_dirents[N_ENT];
-        memset(new_dirents, 0, BLOCK_SIZE);
-        block_write(new_dirents, blk_num, 1);
+        struct fs_dirent new_dir[N_ENT];
+        memset(new_dir, 0, BLOCK_SIZE);
+        block_write(new_dir, blk_num, 1);
     }
     else // other errors
     {
-        return new_inum;
+        return inum;
     }
     return 0;
 }
+/*
+only remove empty dirs
+*/
+int lab3_rmdir(const char* path)
+{
+    // make sure parent path is valid
+    char name[28];
+    int parent_inum = path_to_parent(path, name);
+    if (parent_inum < 0)
+        return parent_inum;
 
+    // lookup name in parent
+    struct fs_inode *parent_inode = &in_table[parent_inum];
+    if (!S_ISDIR(parent_inode->mode))
+    {
+        return -ENOTDIR;
+    }
 
+    struct fs_dirent parent_dir[N_ENT];
+    if (block_read(parent_dir, parent_inode->ptrs[0], 1) == -EIO)
+    {
+        return -EIO;
+    }
+
+    int inum = -ENOENT;
+    struct fs_dirent* parent_dirent;
+    for (int i = 0; i < N_ENT; i++)
+    {
+        if (parent_dir[i].valid == 1 && strcmp(name, parent_dir[i].name) == 0)
+        {
+            parent_dirent = &parent_dir[i];// need to modify parent directory later
+            inum = parent_dirent->inode;
+        }
+    }
+    if (inum == -ENOENT)
+        return inum;
+
+    // check if target is a directory
+    struct fs_inode inode = in_table[inum];
+    if (!S_ISDIR(inode.mode))
+    {
+        return -ENOTDIR;
+    }
+
+    // check if the directory is empty
+    struct fs_dirent dir[N_ENT];
+    if (block_read(dir, inode.ptrs[0], 1) == -EIO)
+        return -EIO;
+    for (int i = 0; i < N_ENT; i++)
+    {
+        if (dir[i].valid)
+            return -ENOTEMPTY;
+    }
+
+    // remove dirent in parent
+    parent_dirent->valid = 0;
+    block_write(parent_dir, parent_inode->ptrs[0], 1);
+
+    // update bitmaps
+    bit_clear(blk_map, inode.ptrs[0]);
+    block_write(blk_map, 1, 1);
+    bit_clear(in_map,inum);
+    block_write(in_map, 1+superblock->blk_map_len,1);
+
+    return 0;
+}
 
 int lab3_create(const char *path, mode_t mode, struct fuse_file_info *)
 {
     // int inum=path_to_inode(path);
     // if (inum<0) return inum;
 }
+
 /* for read-only version you need to implement:
  * - lab3_init
  * - lab3_getattr
@@ -400,7 +499,7 @@ struct fuse_operations fs_ops = {
     //    .create = lab3_create,
     .mkdir = lab3_mkdir,
     //    .unlink = lab3_unlink,
-    //    .rmdir = lab3_rmdir,
+    .rmdir = lab3_rmdir,
     //    .rename = lab3_rename,
     //    .chmod = lab3_chmod,
     //    .truncate = lab3_truncate,
