@@ -86,6 +86,30 @@ int lookup(const char *name, struct fs_inode *in)
     }
     return -ENOENT;
 }
+/*
+loopup function for read/write functions? we need to buffer the parent directory, and the matched dirent
+*/
+int lookup_rw(const char *name, struct fs_inode *in, struct fs_dirent dir[], struct fs_dirent **dirent)
+{ // kind of tricky to use double pointer, *dirent to modify dir, **dirent to keep change outside this func
+    if (!S_ISDIR(in->mode))
+    {
+        return -ENOTDIR;
+    }
+
+    if (block_read(dir, in->ptrs[0], 1) == -EIO)
+    {
+        return -EIO;
+    }
+    for (int i = 0; i < N_ENT; i++)
+    {
+        if (dir[i].valid == 1 && strcmp(name, dir[i].name) == 0)
+        {
+            *dirent = &dir[i];
+            return dir[i].inode; // return matched inode number
+        }
+    }
+    return -ENOENT;
+}
 
 /*
 convert path to inode number,
@@ -403,29 +427,35 @@ int lab3_rmdir(const char* path)
 
     // lookup name in parent
     struct fs_inode *parent_inode = &in_table[parent_inum];
-    if (!S_ISDIR(parent_inode->mode))
-    {
-        return -ENOTDIR;
-    }
-
     struct fs_dirent parent_dir[N_ENT];
-    if (block_read(parent_dir, parent_inode->ptrs[0], 1) == -EIO)
-    {
-        return -EIO;
-    }
-
-    int inum = -ENOENT;
-    struct fs_dirent* parent_dirent;
-    for (int i = 0; i < N_ENT; i++)
-    {
-        if (parent_dir[i].valid == 1 && strcmp(name, parent_dir[i].name) == 0)
-        {
-            parent_dirent = &parent_dir[i];// need to modify parent directory later
-            inum = parent_dirent->inode;
-        }
-    }
-    if (inum == -ENOENT)
+    struct fs_dirent *parent_dirent;
+    int inum = lookup_rw(name, parent_inode, parent_dir, &parent_dirent);
+    if (inum < 0)
         return inum;
+    // struct fs_inode *parent_inode = &in_table[parent_inum];
+    // if (!S_ISDIR(parent_inode->mode))
+    // {
+    //     return -ENOTDIR;
+    // }
+
+    // struct fs_dirent parent_dir[N_ENT];
+    // if (block_read(parent_dir, parent_inode->ptrs[0], 1) == -EIO)
+    // {
+    //     return -EIO;
+    // }
+
+    // int inum = -ENOENT;
+    // struct fs_dirent* parent_dirent;
+    // for (int i = 0; i < N_ENT; i++)
+    // {
+    //     if (parent_dir[i].valid == 1 && strcmp(name, parent_dir[i].name) == 0)
+    //     {
+    //         parent_dirent = &parent_dir[i];// need to modify parent directory later
+    //         inum = parent_dirent->inode;
+    //     }
+    // }
+    // if (inum == -ENOENT)
+    //     return inum;
 
     // check if target is a directory
     struct fs_inode inode = in_table[inum];
@@ -457,11 +487,63 @@ int lab3_rmdir(const char* path)
     return 0;
 }
 
+/*
+use `mv` to test. 
+rename:
+    $mv /path/to/src /path/to/dest
+move:
+    $mv /path/to src /path/to/dest/
+with slash, dest is treated as a directory
+only implemented the first functionality
+*/
+int lab3_rename(const char * oldpath, const char * newpath, unsigned int flags)
+{
+    // check either parent is valid
+    char old_name[28];
+    int old_parent_inum = path_to_parent(oldpath, old_name);
+    if (old_parent_inum < 0)
+        return old_parent_inum;
+    char new_name[28];
+    int new_parent_inum = path_to_parent(newpath, new_name);
+    if (new_parent_inum < 0)
+        return new_parent_inum;
+    if (old_parent_inum!=new_parent_inum)
+    {
+        return -EINVAL; // unable to rename across directories
+    }
+
+    // lookup oldname in parent, check if valid
+    struct fs_inode *parent_inode = &in_table[old_parent_inum];
+    struct fs_dirent parent_dir[N_ENT];
+    struct fs_dirent *parent_dirent;
+    int old_inum = lookup_rw(old_name, parent_inode, parent_dir, &parent_dirent);
+    if (old_inum < 0)
+        return old_inum;
+    // lookup newname in parent, make sure it DOESN'T exist
+    int new_inum = lookup(new_name, parent_inode);
+    if (new_inum > 0) // destination already exists
+        return -EEXIST;
+    else if (new_inum == -ENOENT) // able to rename
+    {
+        strcpy(parent_dirent->name, new_name);
+        block_write(parent_dir, parent_inode->ptrs[0], 1); // TODO: update metadata in inode
+        return 0;
+    }
+    else
+    {
+        return new_inum;
+    }
+
+    // update inode
+          
+}
+
 int lab3_create(const char *path, mode_t mode, struct fuse_file_info *)
 {
     // int inum=path_to_inode(path);
     // if (inum<0) return inum;
 }
+
 
 /* for read-only version you need to implement:
  * - lab3_init
@@ -493,7 +575,7 @@ struct fuse_operations fs_ops = {
     .mkdir = lab3_mkdir,
     //    .unlink = lab3_unlink,
     .rmdir = lab3_rmdir,
-    //    .rename = lab3_rename,
+    .rename = lab3_rename,
     //    .chmod = lab3_chmod,
     //    .truncate = lab3_truncate,
     //    .write = lab3_write,
