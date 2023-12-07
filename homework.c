@@ -301,6 +301,14 @@ int lab3_read(const char *path, char *buf, size_t len, off_t offset, struct fuse
 }
 
 /*
+This is used to test lab3_create using touch
+*/
+int lab3_utimens(const char *path, const struct timespec tv[2], struct fuse_file_info *fi)
+{
+    return 0;
+}
+
+/*
 Creates a file in the disk
 You can use touch, cat > to test these functions
 */
@@ -357,6 +365,7 @@ int lab3_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 
     // Update the parent directory entry with the new file information
     struct fs_dirent dirents[N_ENT];
+    memset(dirents, 0, BLOCK_SIZE);
     block_read(dirents, parent_inode.ptrs[0], 1);
 
     // Find a free directory entry
@@ -536,7 +545,7 @@ int lab3_chmod(const char *path, mode_t new_mode, struct fuse_file_info *fi)
     struct fs_inode *inode = &in_table[inum];
 
     // Update the mode of the inode
-    inode->mode = (old_mode & S_IFMT) | new_mode;
+    // inode->mode = (old_mode & S_IFMT) | new_mode;
 
     // Update modification time
     inode->mtime = time(NULL);
@@ -554,6 +563,7 @@ int lab3_chmod(const char *path, mode_t new_mode, struct fuse_file_info *fi)
 
 
 /*
+Truncates the function to 0 bytes
 Test with this function, piazza post allowed implementing truncate only working with file length 0
 truncate -s 0 [filename]
 */
@@ -632,12 +642,13 @@ struct fuse_operations fs_ops = {
     .readdir = lab3_readdir,
     .read = lab3_read,
 
-   .create = lab3_create,
-   .mkdir = lab3_mkdir,
-   .unlink = lab3_unlink,
+    .utimens = lab3_utimens,
+    .create = lab3_create,
+    .mkdir = lab3_mkdir,
+    .unlink = lab3_unlink,
 //    .rmdir = lab3_rmdir,
 //    .rename = lab3_rename,
-   .chmod = lab3_chmod,
-   .truncate = lab3_truncate,
+    .chmod = lab3_chmod,
+    .truncate = lab3_truncate,
 //    .write = lab3_write,
 };
