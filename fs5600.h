@@ -37,6 +37,7 @@ struct fs_super {
 };
 
 #define N_DIRECT 6
+#define N_INDIRECT 256
 struct fs_inode {
     int16_t uid;      /* file owner */
     int16_t gid;      /* group */

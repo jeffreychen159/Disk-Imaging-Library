@@ -177,6 +177,145 @@ void inode_2_stat(struct stat *sb, struct fs_inode *in)
 /*
 helper functions for allocation
 */
+int block_idx_to_num(int idx, struct fs_inode *in)
+{
+    int blk_num;
+    if (idx < N_DIRECT)
+    {
+        blk_num = in->ptrs[idx] ? in->ptrs[idx] : alloc_block();
+    }
+    else if (idx < N_DIRECT + N_INDIRECT)
+    {
+        int indir_ptrs[N_INDIRECT];
+        block_read(indir_ptrs, in->indir_1, 1);
+        if (indir_ptrs[idx - N_DIRECT] == 0)
+        {
+            indir_ptrs[idx - N_DIRECT] = alloc_block();
+            block_write(indir_ptrs, in->indir_1, 1);
+        }
+        blk_num = indir_ptrs[idx - N_DIRECT];
+    }
+    else if (idx < N_DIRECT + N_INDIRECT + N_INDIRECT * N_INDIRECT)
+    {
+        int indir_ptrs_1[N_INDIRECT];
+        int indir_ptrs_2[N_INDIRECT];
+        int node_idx=(idx - N_DIRECT - N_INDIRECT) / N_INDIRECT;
+        int leaf_idx=(idx - N_DIRECT - N_INDIRECT) % N_INDIRECT;
+        block_read(indir_ptrs_1, in->indir_2, 1);
+        block_read(indir_ptrs_2, indir_ptrs_1[node_idx], 1);
+        if (indir_ptrs_2[leaf_idx]==0)
+        {
+            indir_ptrs_2[leaf_idx]=alloc_block();
+            block_write(indir_ptrs_2, indir_ptrs_1[node_idx], 1);
+        }
+        blk_num = indir_ptrs_2[leaf_idx];
+    }
+    else
+    {
+        return -EINVAL;
+    }
+    return blk_num;
+}
+
+// int append_block(struct fs_inode *in)
+// {
+//     int n_blk = div_round_up(in->size, BLOCK_SIZE);
+//     int blk_num = alloc_block();
+//     if (blk_num < 0)
+//     {
+//         return blk_num;
+//     }
+
+//     if (n_blk < N_DIRECT)
+//     {
+//         in->ptrs[n_blk]=blk_num;
+//     }
+//     else if (n_blk < N_DIRECT + N_INDIRECT)
+//     {
+//         int indir_ptrs[N_INDIRECT];
+//         block_read(indir_ptrs, in->indir_1, 1);
+//         indir_ptrs[n_blk - N_DIRECT] = blk_num;
+//         block_write(indir_ptrs, in->indir_1, 1);// but I think we should write back last
+//     }
+//     else if (n_blk < N_DIRECT + N_INDIRECT + N_INDIRECT * N_INDIRECT)
+//     {
+//         int indir_ptrs_1[N_INDIRECT];
+//         int indir_ptrs_2[N_INDIRECT];
+//         block_read(indir_ptrs_1, in->indir_2, 1);
+//         int indir_ptr_1 = indir_ptrs_1[(n_blk - N_DIRECT - N_INDIRECT) / N_INDIRECT];
+//         block_read(indir_ptrs_2, indir_ptr_1, 1);
+//         return indir_ptrs_2[(n_blk - N_DIRECT - N_INDIRECT) % N_INDIRECT];
+//     }
+//     else
+//     {
+//         return -EINVAL;
+//     }
+//     return blk_num;
+// }
+
+// int extend_file(struct fs_inode* in, int n_blk, int blk_arr[])
+// {
+//     int n_blocks = div_round_up(in->size, BLOCK_SIZE);
+//     // [0,6,6+256,6+256+256^2]
+//     // 3+2+1=6 possibilities
+
+//     int indir_1_ptrs[N_INDIRECT] = {};
+//     int indir_2_ptrs[N_INDIRECT][N_INDIRECT] = {};
+//     int i = 0; // allocated blocks count
+//     for (int i = 0; i < n_blk; i++)
+//     {
+//         int blk_num=alloc_block();
+//         if (blk_num<0)
+//         {
+//             break;
+//         }
+//         if (n_blocks < N_DIRECT)
+//         {
+//             in->ptrs[n_blocks] = blk_num;
+//         }
+//         else if (n_blocks < N_DIRECT + N_INDIRECT)
+//         {
+//             block_read(indir_1_ptrs, in->indir_1, 1);
+//             indir_1_ptrs[n_blocks-N_DIRECT]=blk_num;
+//         }
+//         else if (n_blocks < N_DIRECT + N_INDIRECT + N_INDIRECT * N_INDIRECT)
+//         {
+//             int node_idx = (n_blocks - N_DIRECT - N_INDIRECT) / N_INDIRECT;
+//             int leaf_idx = (n_blocks - N_DIRECT - N_INDIRECT) % N_INDIRECT;
+//             int buffer[N_INDIRECT];
+//             block_read(buffer, in->indir_2, 1);
+//             block_read(indir_2_ptrs[node_idx], buffer[node_idx], 1);
+//             indir_2_ptrs[node_idx][leaf_idx]=blk_num;
+//         }
+//         n_blocks++;
+//         blk_arr[i]=blk_num;
+//     }
+
+//     for (i; old_n_blk + i < n_blk; i++)
+//     {
+//         int blk_num = alloc_block();
+//         if (blk_num < 0)
+//         {
+//             return blk_num;
+//         }
+//         if (old_n_blk + i < N_DIRECT)
+//         {
+//             in->ptrs[old_n_blk + i] = blk_num;
+//         }
+//         else if (old_n_blk + i < N_DIRECT + N_INDIRECT)
+//         {
+//             indir_1_ptrs[old_n_blk + i - N_DIRECT] = blk_num;
+//         }
+//         else if (old_n_blk + i < N_DIRECT + N_INDIRECT + N_INDIRECT * N_INDIRECT)
+//         {
+//             int node_num = (old_n_blk + i - N_DIRECT - N_INDIRECT) / N_INDIRECT;
+//             int leaf_num = (old_n_blk + i - N_DIRECT - N_INDIRECT) % N_INDIRECT;
+//             indir_2_ptrs[node_num][leaf_num] = blk_num;
+//         }
+//     }
+//     block_write(indir_1_ptrs, in->indir_1, 1);
+//     return i;
+// }
 int alloc_block()
 {
     for (int i = 0; i < superblock->disk_size; i++)
@@ -185,6 +324,10 @@ int alloc_block()
         {
             bit_set(blk_map, i);
             block_write(blk_map, 1, superblock->blk_map_len);
+            // initialize
+            char block[BLOCK_SIZE];
+            memset(block, 0, sizeof(block));
+            block_write(block, i, 1);
             return i;
         }
     }
@@ -199,6 +342,8 @@ int alloc_inode()
         {
             bit_set(in_map, i);
             block_write(in_map, 1 + superblock->blk_map_len, superblock->in_map_len);
+            struct fs_inode *inode = &in_table[i];
+            memset(inode, 0, sizeof(struct fs_inode));
             return i;
         }
     }
@@ -289,9 +434,10 @@ int lab3_readdir(const char *path, void *ptr, fuse_fill_dir_t filler, off_t offs
 /*
 You can use cat to test this method
 */
-int lab3_read(const char *path, char *buf, size_t len, off_t offset, struct fuse_file_info *fi) 
+int lab3_read(const char *path, char *buf, size_t len, off_t offset, struct fuse_file_info *fi)
 {
-    if (path == NULL || path[0] != '/') {
+    if (path == NULL || path[0] != '/')
+    {
         return -ENOENT;
     }
 
@@ -301,12 +447,14 @@ int lab3_read(const char *path, char *buf, size_t len, off_t offset, struct fuse
 
     struct fs_inode inode = in_table[1]; // root directory is inode 1
     // Traverse the directory structure to find the inode
-    for (int i = 0; i < argc; i++) {
+    for (int i = 0; i < argc; i++)
+    {
         inode = in_table[lookup(argv[i], &inode)];
     }
 
     // Checks to see if it is a file
-    if (!S_ISREG(inode.mode)) {
+    if (!S_ISREG(inode.mode))
+    {
         return -EISDIR;
     }
 
@@ -351,6 +499,7 @@ int lab3_read(const char *path, char *buf, size_t len, off_t offset, struct fuse
 }
 
 
+
 int lab3_mkdir(const char *path, mode_t mode)
 {
     // parent path
@@ -360,7 +509,10 @@ int lab3_mkdir(const char *path, mode_t mode)
         return parent_inum;
 
     // dir itself
-    int inum = lookup(name, &in_table[parent_inum]);
+    struct fs_inode *parent_inode = &in_table[parent_inum];
+    struct fs_dirent parent_dir[N_ENT];
+    struct fs_dirent *parent_dirent;
+    int inum = lookup_rw(name, parent_inode, parent_dir, &parent_dirent);
     if (inum > 0) // path already exists
     {
         return -EEXIST;
@@ -376,11 +528,6 @@ int lab3_mkdir(const char *path, mode_t mode)
             return in_num;
 
         // write directory entry of the new dir in parent data block
-        struct fs_dirent parent_dir[N_ENT];
-        int parent_blknum = in_table[parent_inum].ptrs[0];
-
-        if (block_read(parent_dir, parent_blknum, 1)==-EIO)
-            return -EIO;
         int c = 0;
         while (parent_dir[c].valid) // TODO: handle out of space for a new entry
             c++;
@@ -388,11 +535,11 @@ int lab3_mkdir(const char *path, mode_t mode)
         parent_dirent->valid = 1;
         parent_dirent->inode = in_num;
         strcpy(parent_dirent->name, name);
-
+        int parent_blknum = in_table[parent_inum].ptrs[0];
         block_write(parent_dir, parent_blknum, 1);
 
         // write inode table
-        struct fs_inode *inode = &in_table[in_num]; //use a pointer to modify inode table itself
+        struct fs_inode *inode = &in_table[in_num]; // use a pointer to modify inode table itself
         memset(inode, 0, sizeof(struct fs_inode));
         inode->mode = mode | S_IFDIR;
         inode->size = BLOCK_SIZE;
@@ -417,7 +564,7 @@ int lab3_mkdir(const char *path, mode_t mode)
 /*
 only remove empty dirs
 */
-int lab3_rmdir(const char* path)
+int lab3_rmdir(const char *path)
 {
     // make sure parent path is valid
     char name[28];
@@ -481,14 +628,14 @@ int lab3_rmdir(const char* path)
     // update bitmaps
     bit_clear(blk_map, inode.ptrs[0]);
     block_write(blk_map, 1, 1);
-    bit_clear(in_map,inum);
-    block_write(in_map, 1+superblock->blk_map_len,1);
+    bit_clear(in_map, inum);
+    block_write(in_map, 1 + superblock->blk_map_len, 1);
 
     return 0;
 }
 
 /*
-use `mv` to test. 
+use `mv` to test.
 rename:
     $mv /path/to/src /path/to/dest
 move:
@@ -496,7 +643,7 @@ move:
 with slash, dest is treated as a directory
 only implemented the first functionality
 */
-int lab3_rename(const char * oldpath, const char * newpath, unsigned int flags)
+int lab3_rename(const char *oldpath, const char *newpath, unsigned int flags)
 {
     // check either parent is valid
     char old_name[28];
@@ -507,7 +654,7 @@ int lab3_rename(const char * oldpath, const char * newpath, unsigned int flags)
     int new_parent_inum = path_to_parent(newpath, new_name);
     if (new_parent_inum < 0)
         return new_parent_inum;
-    if (old_parent_inum!=new_parent_inum)
+    if (old_parent_inum != new_parent_inum)
     {
         return -EINVAL; // unable to rename across directories
     }
@@ -525,26 +672,111 @@ int lab3_rename(const char * oldpath, const char * newpath, unsigned int flags)
         return -EEXIST;
     else if (new_inum == -ENOENT) // able to rename
     {
+        // update dirent in parent
         strcpy(parent_dirent->name, new_name);
-        block_write(parent_dir, parent_inode->ptrs[0], 1); // TODO: update metadata in inode
+        block_write(parent_dir, parent_inode->ptrs[0], 1);
+        // update inode
+        in_table[old_inum].mtime = time(NULL);
         return 0;
     }
     else
     {
         return new_inum;
     }
-
-    // update inode
-          
 }
 
-int lab3_create(const char *path, mode_t mode, struct fuse_file_info *)
+int lab3_write(const char *path, const char *buf, size_t len, off_t offset, struct fuse_file_info *)
 {
-    // int inum=path_to_inode(path);
-    // if (inum<0) return inum;
+    // parse path to inode
+    int inum = path_to_inode(path);
+    if (inum < 0)
+        return inum;
+    // check if is a file
+    struct fs_inode *inode = &in_table[inum];
+    if (!S_ISREG(inode->mode))
+    {
+        return -EISDIR;
+    }
+    // check offset
+    if (offset >= inode->size)
+    {
+        return -EINVAL;
+    }
+    // check if need to allocate blocks
+    // or write on allocate?
+    int new_size = (inode->size >= offset + len) ? inode->size : (offset + len);
+    int new_n_blk = div_round_up(new_size, BLOCK_SIZE);
+    int start_block = offset / BLOCK_SIZE;
+    int end_block = (offset + len) / BLOCK_SIZE;
+    int n_blk_done = start_block;
+    int bytes_written = 0;
+    // assemble the write buffer
+    char write_buf[(new_n_blk - n_blk_done) * BLOCK_SIZE];
+    memset(write_buf, 0, sizeof(write_buf));
+    char *bufptr = write_buf;
+    // copy the first block
+    int start_blknum = block_idx_to_num(start_block, inode);
+    block_read(bufptr, start_blknum, 1);
+    int end_blknum = block_idx_to_num(end_block, inode);
+    if (end_blknum>0) // if throw an error, there's no space
+    {
+        block_read(bufptr + (new_n_blk - n_blk_done - 1) * BLOCK_SIZE, end_blknum, 1);
+    }
+    memcpy(write_buf + offset % BLOCK_SIZE, buf, len);
+    // what if out of space?
+
+    block_write(bufptr, start_blknum, 1);
+    n_blk_done++;
+    bufptr += BLOCK_SIZE;
+    bytes_written += BLOCK_SIZE - offset % BLOCK_SIZE;
+
+    for (n_blk_done; n_blk_done < new_n_blk - 1; n_blk_done++)
+    {
+        int blk_num = block_idx_to_num(n_blk_done, inode);
+        if (blk_num<=0) 
+            return bytes_written;
+        block_write(bufptr, blk_num, 1);
+        bufptr += BLOCK_SIZE;
+        bytes_written += BLOCK_SIZE;
+    }
+
+    if (end_blknum > 0)
+    {
+        block_write(bufptr, end_blknum, 1);
+        n_blk_done++;
+        bufptr += BLOCK_SIZE;
+        bytes_written += (offset + len) % BLOCK_SIZE;
+    }
+
+    // int indir_1_ptrs[N_INDIRECT]={0};
+    // int indir_2_ptrs[N_INDIRECT][N_INDIRECT]={0};
+    // int start_blknum;
+
+    // if (start_block < N_DIRECT)
+    // {
+    //     start_blknum = inode->ptrs[start_block];
+    // }
+    // else if (start_block < N_DIRECT + N_INDIRECT)
+    // {
+    //     block_read(indir_1_ptrs, inode->indir_1, 1);
+    //     start_blknum = indir_1_ptrs[start_block - N_DIRECT];
+    // }
+    // else if (start_block < N_DIRECT + N_INDIRECT + N_INDIRECT * N_INDIRECT)
+    // {
+    //     int node_idx = (start_block - N_DIRECT - N_INDIRECT) / N_INDIRECT;
+    //     int leaf_idx = (start_block - N_DIRECT - N_INDIRECT) % N_INDIRECT;
+    //     int buffer[N_INDIRECT];
+    //     block_read(buffer, inode->indir_2, 1);
+    //     block_read(indir_2_ptrs[node_idx], buffer[node_idx], 1);
+    //     start_blknum = indir_2_ptrs[node_idx][leaf_idx];
+    // }
+    // else
+    // {
+    //     return -EINVAL;
+    // }
+    // block_read(write_buf, start_blknum, 1);
+    return bytes_written;
 }
-
-
 /* for read-only version you need to implement:
  * - lab3_init
  * - lab3_getattr
@@ -571,12 +803,12 @@ struct fuse_operations fs_ops = {
     .readdir = lab3_readdir,
     .read = lab3_read,
 
-    .create = lab3_create,
+    //.create = lab3_create,
     .mkdir = lab3_mkdir,
     //    .unlink = lab3_unlink,
     .rmdir = lab3_rmdir,
     .rename = lab3_rename,
     //    .chmod = lab3_chmod,
     //    .truncate = lab3_truncate,
-    //    .write = lab3_write,
+    .write = lab3_write,
 };
