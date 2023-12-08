@@ -498,7 +498,164 @@ int lab3_read(const char *path, char *buf, size_t len, off_t offset, struct fuse
     return len - bytes_to_read;
 }
 
+/*
+This is used to test lab3_create using touch
+*/
+int lab3_utimens(const char *path, const struct timespec tv[2], struct fuse_file_info *fi)
+{
+    return 0;
+}
 
+/*
+Creates a file in the disk
+You can use touch, cat > to test these functions
+*/
+int lab3_create(const char *path, mode_t mode, struct fuse_file_info *fi) 
+{
+    if (path == NULL || path[0] != '/') {
+        return -ENOENT;
+    }
+
+    char *argv[MAX_DEPTH];
+    char buf_path[256];
+    int argc = split_path(path, MAX_DEPTH, argv, buf_path, sizeof(buf_path));
+
+    struct fs_inode parent_inode = in_table[1]; // root directory is inode 1
+
+    // Traverse the directory structure to find the parent inode
+    for (int i = 0; i < argc - 1; i++) {
+        parent_inode = in_table[lookup(argv[i], &parent_inode)];
+    }
+
+    // Check if the parent inode represents a directory
+    if (!S_ISDIR(parent_inode.mode)) {
+        return -ENOTDIR;
+    }
+
+    // Check if the file already exists
+    int existing_inode = lookup(argv[argc - 1], &parent_inode);
+    if (existing_inode != -ENOENT) {
+        return -EEXIST;
+    }
+
+    // Find a free inode in the inode table
+    int inode_num = alloc_inode();
+    if (inode_num < 0)
+        return inode_num;
+
+    // Initialize the new inode
+    struct fs_inode *new_inode = &in_table[inode_num];
+    new_inode->mode = S_IFREG | mode;
+    new_inode->uid = getuid();
+    new_inode->gid = getgid();
+    new_inode->size = 0;
+    new_inode->mtime = time(NULL);
+
+    // Find a free block in the block bitmap for the file data
+    int block_num = alloc_block();
+
+    // Update the new inode with the block pointer
+    new_inode->ptrs[0] = block_num;
+
+    int in_block_start = 1 + superblock->blk_map_len + superblock->in_map_len;
+    int in_block_offset = inode_num / N_INODE;
+    block_write(in_table + in_block_offset * N_INODE, in_block_start + in_block_offset, 1);
+
+    // Update the parent directory entry with the new file information
+    struct fs_dirent dirents[N_ENT];
+    memset(dirents, 0, BLOCK_SIZE);
+    block_read(dirents, parent_inode.ptrs[0], 1);
+
+    // Find a free directory entry
+    int dirent_idx;
+    for (dirent_idx = 0; dirent_idx < N_ENT; dirent_idx++) {
+        if (!dirents[dirent_idx].valid) {
+            break;
+        }
+    }
+
+    // Update the directory entry with the new file information
+    dirents[dirent_idx].valid = 1;
+    dirents[dirent_idx].inode = inode_num;
+    strncpy(dirents[dirent_idx].name, argv[argc - 1], sizeof(dirents[dirent_idx].name));
+
+    // Write the updated directory entries back to the block
+    block_write(dirents, parent_inode.ptrs[0], 1);
+    
+    return 0;
+}
+
+/*
+Removes a file from the disk
+You can use rm to test this function after creating a file
+*/
+int lab3_unlink(const char *path) 
+{
+    if (path == NULL || path[0] != '/')
+    {
+        return -ENOENT;
+    }
+
+    char *argv[MAX_DEPTH];
+    char buf_path[256];
+    int argc = split_path(path, MAX_DEPTH, argv, buf_path, sizeof(buf_path));
+
+    struct fs_inode parent_inode = in_table[1]; // root directory is inode 1
+
+    // Find the parent node
+    for (int i = 0; i < argc - 1; i++) {
+        parent_inode = in_table[lookup(argv[i], &parent_inode)];
+    }
+
+    if (!S_ISDIR(parent_inode.mode)) {
+        return -ENOTDIR;
+    }
+
+    // Check if the file is in parent directory
+    int file_inode_num = lookup(argv[argc - 1], &parent_inode);
+    if (file_inode_num < 0) {
+        return file_inode_num; // File does not exist
+    }
+
+    struct fs_inode file_inode = in_table[file_inode_num];
+
+    // Check if the file is a directory
+    if (S_ISDIR(file_inode.mode)) {
+        return -EISDIR; // Cannot unlink a directory
+    }
+
+    // Clear the directory entry in the parent directory
+    struct fs_dirent dirents[N_ENT];
+    if (block_read(dirents, parent_inode.ptrs[0], 1) == -EIO) {
+        return -EIO;
+    }
+
+    int dirent_idx;
+    for (dirent_idx = 0; dirent_idx < N_ENT; dirent_idx++) {
+        if (dirents[dirent_idx].valid && strcmp(dirents[dirent_idx].name, argv[argc - 1]) == 0) {
+            break;
+        }
+    }
+
+    if (dirent_idx < N_ENT) {
+        dirents[dirent_idx].valid = 0;
+    }
+
+    // Write the updated directory entries back to the block
+    if (block_write(dirents, parent_inode.ptrs[0], 1) == -EIO) {
+        return -EIO;
+    }
+
+    // Free the bits of inode and block
+    bit_clear(in_map, file_inode_num);
+    bit_clear(blk_map, file_inode.ptrs[0]);
+
+    // Update the bitmaps in the disk
+    block_write(in_map, 1 + superblock->blk_map_len, superblock->in_map_len);
+    block_write(blk_map, 1, superblock->blk_map_len);
+
+    return 0;
+}
 
 int lab3_mkdir(const char *path, mode_t mode)
 {
