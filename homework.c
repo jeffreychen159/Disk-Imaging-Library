@@ -137,7 +137,7 @@ int path_to_inode(const char *path)
     return inum;
 }
 // do we need a path_to_parent?
-int path_to_parent(const char *path, char* name)
+int path_to_parent(const char *path, char *name)
 {
     if (path == NULL || path[0] != '/')
     {
@@ -199,13 +199,13 @@ int block_idx_to_num(int idx, struct fs_inode *in)
     {
         int indir_ptrs_1[N_INDIRECT];
         int indir_ptrs_2[N_INDIRECT];
-        int node_idx=(idx - N_DIRECT - N_INDIRECT) / N_INDIRECT;
-        int leaf_idx=(idx - N_DIRECT - N_INDIRECT) % N_INDIRECT;
+        int node_idx = (idx - N_DIRECT - N_INDIRECT) / N_INDIRECT;
+        int leaf_idx = (idx - N_DIRECT - N_INDIRECT) % N_INDIRECT;
         block_read(indir_ptrs_1, in->indir_2, 1);
         block_read(indir_ptrs_2, indir_ptrs_1[node_idx], 1);
-        if (indir_ptrs_2[leaf_idx]==0)
+        if (indir_ptrs_2[leaf_idx] == 0)
         {
-            indir_ptrs_2[leaf_idx]=alloc_block();
+            indir_ptrs_2[leaf_idx] = alloc_block();
             block_write(indir_ptrs_2, indir_ptrs_1[node_idx], 1);
         }
         blk_num = indir_ptrs_2[leaf_idx];
@@ -510,9 +510,10 @@ int lab3_utimens(const char *path, const struct timespec tv[2], struct fuse_file
 Creates a file in the disk
 You can use touch, cat > to test these functions
 */
-int lab3_create(const char *path, mode_t mode, struct fuse_file_info *fi) 
+int lab3_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 {
-    if (path == NULL || path[0] != '/') {
+    if (path == NULL || path[0] != '/')
+    {
         return -ENOENT;
     }
 
@@ -523,18 +524,21 @@ int lab3_create(const char *path, mode_t mode, struct fuse_file_info *fi)
     struct fs_inode parent_inode = in_table[1]; // root directory is inode 1
 
     // Traverse the directory structure to find the parent inode
-    for (int i = 0; i < argc - 1; i++) {
+    for (int i = 0; i < argc - 1; i++)
+    {
         parent_inode = in_table[lookup(argv[i], &parent_inode)];
     }
 
     // Check if the parent inode represents a directory
-    if (!S_ISDIR(parent_inode.mode)) {
+    if (!S_ISDIR(parent_inode.mode))
+    {
         return -ENOTDIR;
     }
 
     // Check if the file already exists
     int existing_inode = lookup(argv[argc - 1], &parent_inode);
-    if (existing_inode != -ENOENT) {
+    if (existing_inode != -ENOENT)
+    {
         return -EEXIST;
     }
 
@@ -568,8 +572,10 @@ int lab3_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 
     // Find a free directory entry
     int dirent_idx;
-    for (dirent_idx = 0; dirent_idx < N_ENT; dirent_idx++) {
-        if (!dirents[dirent_idx].valid) {
+    for (dirent_idx = 0; dirent_idx < N_ENT; dirent_idx++)
+    {
+        if (!dirents[dirent_idx].valid)
+        {
             break;
         }
     }
@@ -581,7 +587,7 @@ int lab3_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 
     // Write the updated directory entries back to the block
     block_write(dirents, parent_inode.ptrs[0], 1);
-    
+
     return 0;
 }
 
@@ -589,7 +595,7 @@ int lab3_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 Removes a file from the disk
 You can use rm to test this function after creating a file
 */
-int lab3_unlink(const char *path) 
+int lab3_unlink(const char *path)
 {
     if (path == NULL || path[0] != '/')
     {
@@ -603,46 +609,55 @@ int lab3_unlink(const char *path)
     struct fs_inode parent_inode = in_table[1]; // root directory is inode 1
 
     // Find the parent node
-    for (int i = 0; i < argc - 1; i++) {
+    for (int i = 0; i < argc - 1; i++)
+    {
         parent_inode = in_table[lookup(argv[i], &parent_inode)];
     }
 
-    if (!S_ISDIR(parent_inode.mode)) {
+    if (!S_ISDIR(parent_inode.mode))
+    {
         return -ENOTDIR;
     }
 
     // Check if the file is in parent directory
     int file_inode_num = lookup(argv[argc - 1], &parent_inode);
-    if (file_inode_num < 0) {
+    if (file_inode_num < 0)
+    {
         return file_inode_num; // File does not exist
     }
 
     struct fs_inode file_inode = in_table[file_inode_num];
 
     // Check if the file is a directory
-    if (S_ISDIR(file_inode.mode)) {
+    if (S_ISDIR(file_inode.mode))
+    {
         return -EISDIR; // Cannot unlink a directory
     }
 
     // Clear the directory entry in the parent directory
     struct fs_dirent dirents[N_ENT];
-    if (block_read(dirents, parent_inode.ptrs[0], 1) == -EIO) {
+    if (block_read(dirents, parent_inode.ptrs[0], 1) == -EIO)
+    {
         return -EIO;
     }
 
     int dirent_idx;
-    for (dirent_idx = 0; dirent_idx < N_ENT; dirent_idx++) {
-        if (dirents[dirent_idx].valid && strcmp(dirents[dirent_idx].name, argv[argc - 1]) == 0) {
+    for (dirent_idx = 0; dirent_idx < N_ENT; dirent_idx++)
+    {
+        if (dirents[dirent_idx].valid && strcmp(dirents[dirent_idx].name, argv[argc - 1]) == 0)
+        {
             break;
         }
     }
 
-    if (dirent_idx < N_ENT) {
+    if (dirent_idx < N_ENT)
+    {
         dirents[dirent_idx].valid = 0;
     }
 
     // Write the updated directory entries back to the block
-    if (block_write(dirents, parent_inode.ptrs[0], 1) == -EIO) {
+    if (block_write(dirents, parent_inode.ptrs[0], 1) == -EIO)
+    {
         return -EIO;
     }
 
@@ -842,6 +857,98 @@ int lab3_rename(const char *oldpath, const char *newpath, unsigned int flags)
     }
 }
 
+int lab3_chmod(const char *path, mode_t new_mode, struct fuse_file_info *fi)
+{
+    // Check if the path is valid
+    int inum = path_to_inode(path);
+    if (inum < 0)
+        return inum;
+
+    // Get the corresponding inode
+    struct fs_inode *inode = &in_table[inum];
+
+    // Update the mode of the inode
+    // inode->mode = (old_mode & S_IFMT) | new_mode;
+
+    // Update modification time
+    inode->mtime = time(NULL);
+
+    // Write the updated inode back to the disk
+    int in_block_start = 1 + superblock->blk_map_len + superblock->in_map_len;
+    int in_block_offset = inum / N_INODE;
+    if (block_write(in_table + in_block_offset * N_INODE, in_block_start + in_block_offset, 1) == -EIO)
+    {
+        return -EIO;
+    }
+
+    return 0;
+}
+
+/*
+Truncates the function to 0 bytes
+Test with this function, piazza post allowed implementing truncate only working with file length 0
+truncate -s 0 [filename]
+*/
+int lab3_truncate(const char *path, off_t new_len, struct fuse_file_info *fi)
+{
+    // Check if the path is valid
+    int inum = path_to_inode(path);
+    if (inum < 0)
+        return inum;
+
+    // Get the corresponding inode
+    struct fs_inode *inode = &in_table[inum];
+
+    // Check if the file is a regular file
+    if (!S_ISREG(inode->mode))
+        return -EINVAL; // Invalid argument
+
+    // Case where truncate only truncates to 0
+    if (new_len != 0)
+        return -EINVAL; // Invalid argument
+
+    // Free all existing blocks
+    for (int i = 0; i < N_INODE; i++)
+    {
+        if (inode->ptrs[i] != 0)
+        {
+            // Free the block in the block bitmap
+            bit_clear(blk_map, inode->ptrs[i]);
+            inode->ptrs[i] = 0;
+        }
+    }
+
+    // Updating inode properties
+    inode->size = new_len;
+    inode->mtime = time(NULL);
+
+    // Write the updated inode back to the disk
+    int in_block_start = 1 + superblock->blk_map_len + superblock->in_map_len;
+    int in_block_offset = inum / N_INODE;
+    if (block_write(in_table + in_block_offset * N_INODE, in_block_start + in_block_offset, 1) == -EIO)
+    {
+        return -EIO;
+    }
+
+    // Update the block bitmap on the disk
+    block_write(blk_map, 1, superblock->blk_map_len);
+
+    return 0;
+}
+
+/*
+To test:
+echo "text" > file
+
+cat > file
+hello, world!
+^C
+
+cat >> file
+Add a new line
+^C
+for file with multiple lines, the size is correct but can not print correctly
+*/
 int lab3_write(const char *path, const char *buf, size_t len, off_t offset, struct fuse_file_info *)
 {
     // parse path to inode
@@ -855,83 +962,59 @@ int lab3_write(const char *path, const char *buf, size_t len, off_t offset, stru
         return -EISDIR;
     }
     // check offset
-    if (offset >= inode->size)
+    if (offset > inode->size)
     {
         return -EINVAL;
     }
-    // check if need to allocate blocks
-    // or write on allocate?
-    int new_size = (inode->size >= offset + len) ? inode->size : (offset + len);
-    int new_n_blk = div_round_up(new_size, BLOCK_SIZE);
+
     int start_block = offset / BLOCK_SIZE;
     int end_block = (offset + len) / BLOCK_SIZE;
     int n_blk_done = start_block;
-    int bytes_written = 0;
+
     // assemble the write buffer
-    char write_buf[(new_n_blk - n_blk_done) * BLOCK_SIZE];
+    char write_buf[(end_block - start_block + 1) * BLOCK_SIZE];
     memset(write_buf, 0, sizeof(write_buf));
     char *bufptr = write_buf;
     // copy the first block
     int start_blknum = block_idx_to_num(start_block, inode);
     block_read(bufptr, start_blknum, 1);
+    // copy the last block
     int end_blknum = block_idx_to_num(end_block, inode);
-    if (end_blknum>0) // if throw an error, there's no space
+    if (end_blknum > start_blknum) // if throw an error, there's no space
     {
-        block_read(bufptr + (new_n_blk - n_blk_done - 1) * BLOCK_SIZE, end_blknum, 1);
+        block_read(bufptr + (end_block - start_block) * BLOCK_SIZE, end_blknum, 1);
     }
+    // copy input buffer
     memcpy(write_buf + offset % BLOCK_SIZE, buf, len);
-    // what if out of space?
 
-    block_write(bufptr, start_blknum, 1);
-    n_blk_done++;
-    bufptr += BLOCK_SIZE;
-    bytes_written += BLOCK_SIZE - offset % BLOCK_SIZE;
+    // write to data blocks
+    int write_cursor = offset;
+    int bytes_to_write = len;
+    int bytes_written = 0;
 
-    for (n_blk_done; n_blk_done < new_n_blk - 1; n_blk_done++)
+    for (n_blk_done; n_blk_done < end_block + 1; n_blk_done++)
     {
+        int block_offset = write_cursor % BLOCK_SIZE;
+        int bytes = len > (BLOCK_SIZE - block_offset) ? (BLOCK_SIZE - block_offset) : len;
         int blk_num = block_idx_to_num(n_blk_done, inode);
-        if (blk_num<=0) 
-            return bytes_written;
+        if (blk_num <= 0)
+            break;
         block_write(bufptr, blk_num, 1);
         bufptr += BLOCK_SIZE;
-        bytes_written += BLOCK_SIZE;
+        bytes_written += bytes;
+        write_cursor += bytes;
+        bytes_to_write -= bytes;
     }
 
-    if (end_blknum > 0)
-    {
-        block_write(bufptr, end_blknum, 1);
-        n_blk_done++;
-        bufptr += BLOCK_SIZE;
-        bytes_written += (offset + len) % BLOCK_SIZE;
+    // update metadata
+    if (inode->size < (offset + len))
+    { // if write beyond old end of file
+        inode->size = inode->size + bytes_written - offset;
     }
-
-    // int indir_1_ptrs[N_INDIRECT]={0};
-    // int indir_2_ptrs[N_INDIRECT][N_INDIRECT]={0};
-    // int start_blknum;
-
-    // if (start_block < N_DIRECT)
-    // {
-    //     start_blknum = inode->ptrs[start_block];
-    // }
-    // else if (start_block < N_DIRECT + N_INDIRECT)
-    // {
-    //     block_read(indir_1_ptrs, inode->indir_1, 1);
-    //     start_blknum = indir_1_ptrs[start_block - N_DIRECT];
-    // }
-    // else if (start_block < N_DIRECT + N_INDIRECT + N_INDIRECT * N_INDIRECT)
-    // {
-    //     int node_idx = (start_block - N_DIRECT - N_INDIRECT) / N_INDIRECT;
-    //     int leaf_idx = (start_block - N_DIRECT - N_INDIRECT) % N_INDIRECT;
-    //     int buffer[N_INDIRECT];
-    //     block_read(buffer, inode->indir_2, 1);
-    //     block_read(indir_2_ptrs[node_idx], buffer[node_idx], 1);
-    //     start_blknum = indir_2_ptrs[node_idx][leaf_idx];
-    // }
-    // else
-    // {
-    //     return -EINVAL;
-    // }
-    // block_read(write_buf, start_blknum, 1);
+    inode->mtime=time(NULL);
+    int in_block_start = 1 + superblock->blk_map_len + superblock->in_map_len;
+    int in_block_offset = inum / N_INODE;
+    block_write(in_table + in_block_offset * N_INODE, in_block_start + in_block_offset, 1);    
     return bytes_written;
 }
 /* for read-only version you need to implement:
@@ -960,12 +1043,13 @@ struct fuse_operations fs_ops = {
     .readdir = lab3_readdir,
     .read = lab3_read,
 
-    //.create = lab3_create,
+    .utimens = lab3_utimens,
+    .create = lab3_create,
     .mkdir = lab3_mkdir,
-    //    .unlink = lab3_unlink,
+    .unlink = lab3_unlink,
     .rmdir = lab3_rmdir,
     .rename = lab3_rename,
-    //    .chmod = lab3_chmod,
-    //    .truncate = lab3_truncate,
+    .chmod = lab3_chmod,
+    .truncate = lab3_truncate,
     .write = lab3_write,
 };
