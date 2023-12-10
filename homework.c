@@ -895,84 +895,6 @@ int lab3_rename(const char *oldpath, const char *newpath, unsigned int flags)
     }
 }
 
-int lab3_chmod(const char *path, mode_t new_mode, struct fuse_file_info *fi)
-{
-    // Check if the path is valid
-    int inum = path_to_inode(path);
-    if (inum < 0)
-        return inum;
-
-    // Get the corresponding inode
-    struct fs_inode *inode = &in_table[inum];
-
-    // Update the mode of the inode
-    // inode->mode = (old_mode & S_IFMT) | new_mode;
-
-    // Update modification time
-    inode->mtime = time(NULL);
-
-    // Write the updated inode back to the disk
-    int in_block_start = 1 + superblock->blk_map_len + superblock->in_map_len;
-    int in_block_offset = inum / N_INODE;
-    if (block_write(in_table + in_block_offset * N_INODE, in_block_start + in_block_offset, 1) == -EIO)
-    {
-        return -EIO;
-    }
-
-    return 0;
-}
-
-/*
-Truncates the function to 0 bytes
-Test with this function, piazza post allowed implementing truncate only working with file length 0
-truncate -s 0 [filename]
-*/
-int lab3_truncate(const char *path, off_t new_len, struct fuse_file_info *fi)
-{
-    // Check if the path is valid
-    int inum = path_to_inode(path);
-    if (inum < 0)
-        return inum;
-        
-    // Get the corresponding inode
-    struct fs_inode *inode = &in_table[inum];
-
-    // Check if the file is a regular file
-    if (!S_ISREG(inode->mode))
-        return -EINVAL; // Invalid argument
-
-    // Case where truncate only truncates to 0
-    if (new_len != 0)
-        return -EINVAL; // Invalid argument
-
-    // Free all existing blocks
-    for (int i = 0; i < N_INODE; i++)
-    {
-        if (inode->ptrs[i] != 0)
-        {
-            // Free the block in the block bitmap
-            bit_clear(blk_map, inode->ptrs[i]);
-            inode->ptrs[i] = 0;
-        }
-    }
-
-    // Updating inode properties
-    inode->size = new_len;
-    inode->mtime = time(NULL);
-
-    // Write the updated inode back to the disk
-    int in_block_start = 1 + superblock->blk_map_len + superblock->in_map_len;
-    int in_block_offset = inum / N_INODE;
-    if (block_write(in_table + in_block_offset * N_INODE, in_block_start + in_block_offset, 1) == -EIO)
-    {
-        return -EIO;
-    }
-
-    // Update the block bitmap on the disk
-    block_write(blk_map, 1, superblock->blk_map_len);
-
-    return 0;
-}
 
 /*
 To test:
@@ -1054,7 +976,7 @@ int lab3_write(const char *path, const char *buf, size_t len, off_t offset, stru
     int in_block_start = 1 + superblock->blk_map_len + superblock->in_map_len;
     int in_block_offset = inum / N_INODE;
     block_write(in_table + in_block_offset * N_INODE, in_block_start + in_block_offset, 1);    
-    
+
     return bytes_written;
 }
     
