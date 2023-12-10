@@ -459,8 +459,7 @@ int lab3_read(const char *path, char *buf, size_t len, off_t offset, struct fuse
     }
 
     // Check if the offset is within the file size
-    if (offset >= inode.size)
-    {
+    if (offset >= inode.size) {
         return 0;
     }
 
@@ -469,21 +468,60 @@ int lab3_read(const char *path, char *buf, size_t len, off_t offset, struct fuse
     size_t bytes_to_read = len < remaining_bytes ? len : remaining_bytes;
 
     // Calculate the block number and offset within the block
-    int block_num = offset / BLOCK_SIZE;
-    int block_offset = offset % BLOCK_SIZE;
+    int block_size = BLOCK_SIZE;
+    int block_num = offset / block_size;
+    int block_offset = offset % block_size;
 
-    // Read data from the file block by block
-    while (bytes_to_read > 0)
-    {
+    // Read data from the file block by block, handling indirect and double indirect blocks
+    while (bytes_to_read > 0) {
         char block[BLOCK_SIZE];
-        // Checks if there is an error reading the block
-        if (block_read(block, inode.ptrs[block_num], 1) == -EIO)
-        {
-            return -EIO;
+
+        if (block_num < N_DIRECT) {
+            // Direct block
+            if (block_read(block, inode.ptrs[block_num], 1) == -EIO) {
+                return -EIO;
+            }
+        } else if (block_num < N_DIRECT + (BLOCK_SIZE / sizeof(int32_t))) {
+            // Single indirect block
+            int32_t indirect_block[BLOCK_SIZE / sizeof(int32_t)];
+            if (block_read(indirect_block, inode.indir_1, 1) == -EIO) {
+                return -EIO;
+            }
+            int indirect_index = block_num - N_DIRECT;
+            if (indirect_block[indirect_index] == 0) {
+                // Block not allocated, consider as zeros
+                memset(block, 0, BLOCK_SIZE);
+            } else {
+                // Read data from the indirect block
+                if (block_read(block, indirect_block[indirect_index], 1) == -EIO) {
+                    return -EIO;
+                }
+            }
+        } else {
+            // Double indirect block
+            int32_t double_indirect_block[BLOCK_SIZE / sizeof(int32_t)];
+            if (block_read(double_indirect_block, inode.indir_2, 1) == -EIO) {
+                return -EIO;
+            }
+            int double_indirect_index = (block_num - N_DIRECT - (BLOCK_SIZE / sizeof(int32_t))) / (BLOCK_SIZE / sizeof(int32_t));
+            int32_t indirect_block[BLOCK_SIZE / sizeof(int32_t)];
+            if (block_read(indirect_block, double_indirect_block[double_indirect_index], 1) == -EIO) {
+                return -EIO;
+            }
+            int indirect_index = (block_num - N_DIRECT - (BLOCK_SIZE / sizeof(int32_t))) % (BLOCK_SIZE / sizeof(int32_t));
+            if (indirect_block[indirect_index] == 0) {
+                // Block not allocated, consider as zeros
+                memset(block, 0, BLOCK_SIZE);
+            } else {
+                // Read data from the indirect block
+                if (block_read(block, indirect_block[indirect_index], 1) == -EIO) {
+                    return -EIO;
+                }
+            }
         }
 
         // Calculate the number of bytes to copy from this block
-        size_t bytes_from_block = bytes_to_read < (BLOCK_SIZE - block_offset) ? bytes_to_read : (BLOCK_SIZE - block_offset);
+        size_t bytes_from_block = bytes_to_read < (block_size - block_offset) ? bytes_to_read : (block_size - block_offset);
 
         // Copy the data from the block to the buffer
         memcpy(buf, block + block_offset, bytes_from_block);
@@ -895,7 +933,7 @@ int lab3_truncate(const char *path, off_t new_len, struct fuse_file_info *fi)
     int inum = path_to_inode(path);
     if (inum < 0)
         return inum;
-
+        
     // Get the corresponding inode
     struct fs_inode *inode = &in_table[inum];
 
@@ -1016,7 +1054,91 @@ int lab3_write(const char *path, const char *buf, size_t len, off_t offset, stru
     int in_block_offset = inum / N_INODE;
     block_write(in_table + in_block_offset * N_INODE, in_block_start + in_block_offset, 1);    
     return bytes_written;
+    
+    
+int lab3_chmod(const char *path, mode_t new_mode, struct fuse_file_info *fi) 
+{
+    // Check if the path is valid
+    int inum = path_to_inode(path);
+    if (inum < 0)
+        return inum;
+
+    // Get the corresponding inode
+    struct fs_inode *inode = &in_table[inum];
+
+    // Update the mode of the inode
+    mode_t old_mode = inode->mode;
+    inode->mode = (old_mode & S_IFMT) | new_mode;
+
+    // Update modification time
+    inode->mtime = time(NULL);
+
+    // Write the updated inode back to the disk
+    int in_block_start = 1 + superblock->blk_map_len + superblock->in_map_len;
+    int in_block_offset = inum / N_INODE;
+    if (block_write(in_table + in_block_offset * N_INODE, in_block_start + in_block_offset, 1) == -EIO)
+    {
+        return -EIO;
+    }
+
+    return 0;
 }
+
+
+/*
+Truncates the function to 0 bytes
+Test with this function, piazza post allowed implementing truncate only working with file length 0
+truncate -s 0 [filename]
+*/
+int lab3_truncate(const char *path, off_t new_len, struct fuse_file_info *fi) 
+{
+    // Check if the path is valid
+    int inum = path_to_inode(path);
+    if (inum < 0)
+        return inum;
+
+    // Get the corresponding inode
+    struct fs_inode *inode = &in_table[inum];
+
+    // Check if the file is a regular file
+    if (!S_ISREG(inode->mode))
+        return -EINVAL;  // Invalid argument
+
+    // Case where truncate only truncates to 0
+    if (new_len != 0)
+        return -EINVAL;  // Invalid argument
+
+    
+    // Free all existing blocks
+    for (int i = 0; i < N_INODE; i++)
+    {
+        if (inode->ptrs[i] != 0)
+        {
+            // Free the block in the block bitmap
+            bit_clear(blk_map, inode->ptrs[i]);
+            inode->ptrs[i] = 0;
+        }
+    }
+
+    // Updating inode properties
+    inode->size = new_len;
+    inode->mtime = time(NULL);
+
+    // Write the updated inode back to the disk
+    int in_block_start = 1 + superblock->blk_map_len + superblock->in_map_len;
+    int in_block_offset = inum / N_INODE;
+    if (block_write(in_table + in_block_offset * N_INODE, in_block_start + in_block_offset, 1) == -EIO)
+    {
+        return -EIO;
+    }
+
+    // Update the block bitmap on the disk
+    block_write(blk_map, 1, superblock->blk_map_len);
+
+    return 0;
+}
+
+
 /* for read-only version you need to implement:
  * - lab3_init
  * - lab3_getattr
