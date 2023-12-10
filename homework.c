@@ -988,6 +988,7 @@ Add a new line
 for file with multiple lines, the size is correct but can not print correctly
 */
 int lab3_write(const char *path, const char *buf, size_t len, off_t offset, struct fuse_file_info *)
+
 {
     // parse path to inode
     int inum = path_to_inode(path);
@@ -1053,7 +1054,9 @@ int lab3_write(const char *path, const char *buf, size_t len, off_t offset, stru
     int in_block_start = 1 + superblock->blk_map_len + superblock->in_map_len;
     int in_block_offset = inum / N_INODE;
     block_write(in_table + in_block_offset * N_INODE, in_block_start + in_block_offset, 1);    
+    
     return bytes_written;
+}
     
     
 int lab3_chmod(const char *path, mode_t new_mode, struct fuse_file_info *fi) 
