@@ -217,105 +217,7 @@ int block_idx_to_num(int idx, struct fs_inode *in)
     return blk_num;
 }
 
-// int append_block(struct fs_inode *in)
-// {
-//     int n_blk = div_round_up(in->size, BLOCK_SIZE);
-//     int blk_num = alloc_block();
-//     if (blk_num < 0)
-//     {
-//         return blk_num;
-//     }
 
-//     if (n_blk < N_DIRECT)
-//     {
-//         in->ptrs[n_blk]=blk_num;
-//     }
-//     else if (n_blk < N_DIRECT + N_INDIRECT)
-//     {
-//         int indir_ptrs[N_INDIRECT];
-//         block_read(indir_ptrs, in->indir_1, 1);
-//         indir_ptrs[n_blk - N_DIRECT] = blk_num;
-//         block_write(indir_ptrs, in->indir_1, 1);// but I think we should write back last
-//     }
-//     else if (n_blk < N_DIRECT + N_INDIRECT + N_INDIRECT * N_INDIRECT)
-//     {
-//         int indir_ptrs_1[N_INDIRECT];
-//         int indir_ptrs_2[N_INDIRECT];
-//         block_read(indir_ptrs_1, in->indir_2, 1);
-//         int indir_ptr_1 = indir_ptrs_1[(n_blk - N_DIRECT - N_INDIRECT) / N_INDIRECT];
-//         block_read(indir_ptrs_2, indir_ptr_1, 1);
-//         return indir_ptrs_2[(n_blk - N_DIRECT - N_INDIRECT) % N_INDIRECT];
-//     }
-//     else
-//     {
-//         return -EINVAL;
-//     }
-//     return blk_num;
-// }
-
-// int extend_file(struct fs_inode* in, int n_blk, int blk_arr[])
-// {
-//     int n_blocks = div_round_up(in->size, BLOCK_SIZE);
-//     // [0,6,6+256,6+256+256^2]
-//     // 3+2+1=6 possibilities
-
-//     int indir_1_ptrs[N_INDIRECT] = {};
-//     int indir_2_ptrs[N_INDIRECT][N_INDIRECT] = {};
-//     int i = 0; // allocated blocks count
-//     for (int i = 0; i < n_blk; i++)
-//     {
-//         int blk_num=alloc_block();
-//         if (blk_num<0)
-//         {
-//             break;
-//         }
-//         if (n_blocks < N_DIRECT)
-//         {
-//             in->ptrs[n_blocks] = blk_num;
-//         }
-//         else if (n_blocks < N_DIRECT + N_INDIRECT)
-//         {
-//             block_read(indir_1_ptrs, in->indir_1, 1);
-//             indir_1_ptrs[n_blocks-N_DIRECT]=blk_num;
-//         }
-//         else if (n_blocks < N_DIRECT + N_INDIRECT + N_INDIRECT * N_INDIRECT)
-//         {
-//             int node_idx = (n_blocks - N_DIRECT - N_INDIRECT) / N_INDIRECT;
-//             int leaf_idx = (n_blocks - N_DIRECT - N_INDIRECT) % N_INDIRECT;
-//             int buffer[N_INDIRECT];
-//             block_read(buffer, in->indir_2, 1);
-//             block_read(indir_2_ptrs[node_idx], buffer[node_idx], 1);
-//             indir_2_ptrs[node_idx][leaf_idx]=blk_num;
-//         }
-//         n_blocks++;
-//         blk_arr[i]=blk_num;
-//     }
-
-//     for (i; old_n_blk + i < n_blk; i++)
-//     {
-//         int blk_num = alloc_block();
-//         if (blk_num < 0)
-//         {
-//             return blk_num;
-//         }
-//         if (old_n_blk + i < N_DIRECT)
-//         {
-//             in->ptrs[old_n_blk + i] = blk_num;
-//         }
-//         else if (old_n_blk + i < N_DIRECT + N_INDIRECT)
-//         {
-//             indir_1_ptrs[old_n_blk + i - N_DIRECT] = blk_num;
-//         }
-//         else if (old_n_blk + i < N_DIRECT + N_INDIRECT + N_INDIRECT * N_INDIRECT)
-//         {
-//             int node_num = (old_n_blk + i - N_DIRECT - N_INDIRECT) / N_INDIRECT;
-//             int leaf_num = (old_n_blk + i - N_DIRECT - N_INDIRECT) % N_INDIRECT;
-//             indir_2_ptrs[node_num][leaf_num] = blk_num;
-//         }
-//     }
-//     block_write(indir_1_ptrs, in->indir_1, 1);
-//     return i;
-// }
 int alloc_block()
 {
     for (int i = 0; i < superblock->disk_size; i++)
@@ -789,30 +691,6 @@ int lab3_rmdir(const char *path)
     int inum = lookup_rw(name, parent_inode, parent_dir, &parent_dirent);
     if (inum < 0)
         return inum;
-    // struct fs_inode *parent_inode = &in_table[parent_inum];
-    // if (!S_ISDIR(parent_inode->mode))
-    // {
-    //     return -ENOTDIR;
-    // }
-
-    // struct fs_dirent parent_dir[N_ENT];
-    // if (block_read(parent_dir, parent_inode->ptrs[0], 1) == -EIO)
-    // {
-    //     return -EIO;
-    // }
-
-    // int inum = -ENOENT;
-    // struct fs_dirent* parent_dirent;
-    // for (int i = 0; i < N_ENT; i++)
-    // {
-    //     if (parent_dir[i].valid == 1 && strcmp(name, parent_dir[i].name) == 0)
-    //     {
-    //         parent_dirent = &parent_dir[i];// need to modify parent directory later
-    //         inum = parent_dirent->inode;
-    //     }
-    // }
-    // if (inum == -ENOENT)
-    //     return inum;
 
     // check if target is a directory
     struct fs_inode inode = in_table[inum];
@@ -928,6 +806,11 @@ int lab3_write(const char *path, const char *buf, size_t len, off_t offset, stru
         return -EINVAL;
     }
 
+    uid_t current_uid = fuse_get_context()->uid;
+    if (current_uid != 0 && current_uid != inode->uid) {
+        return -EACCES; // Permission denied
+    }
+
     int start_block = offset / BLOCK_SIZE;
     int end_block = (offset + len) / BLOCK_SIZE;
     int n_blk_done = start_block;
@@ -990,6 +873,12 @@ int lab3_chmod(const char *path, mode_t new_mode, struct fuse_file_info *fi)
 
     // Get the corresponding inode
     struct fs_inode *inode = &in_table[inum];
+
+    // Permission check: Only allow changing mode if the user is the owner or a privileged user (root)
+    uid_t current_uid = fuse_get_context()->uid;
+    if (current_uid != 0 && current_uid != inode->uid) {
+        return -EACCES; // Permission denied
+    }
 
     // Update the mode of the inode
     mode_t old_mode = inode->mode;
